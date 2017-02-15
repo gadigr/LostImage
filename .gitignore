@@ -1,1 +1,7 @@
-/FinalDataset
+
+.vscode
+graphs/
+finalDataset
+images.dat
+labels.dat
+36X36

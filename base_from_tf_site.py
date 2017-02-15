@@ -1,40 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import tensorflow.examples.tutorials.mnist.input_data as input_data
-from os import listdir
-from os.path import isfile, join
-from PIL import Image
-from resizeimage import resizeimage
-from skimage import img_as_float
-
-size = 28,28
-def PIL2array(img):
-    ar = np.array(img.getdata(),
-                    np.float32)
-    return np.multiply(ar, 1/255).tolist()
-
-# mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
-# some , other = mnist.train.next_batch(50)
-# print(other)
-def readData():
-    dirs = listdir('letters/')
-    y = []
-    x =[]
-    for directory in dirs:
-        images = listdir('letters/'+directory)
-
-        for img in images:
-            arr = [0.] * 50
-            arr[int(directory) - 1] = 1.
-            y.append(arr)
-            fd_img = 'letters/'+directory + '/' + img
-            imgg = Image.open(fd_img).convert('L')
-            imgg = imgg.resize(size)
-            x.append(PIL2array(imgg))
-    
-    return x,y
-
-# print(readData())
+mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
 
 # Convolution definition
 def conv2d(x,W):
@@ -54,8 +21,8 @@ def bias_variable(shape):
 
 
 # We start
-n_input = 28*28
-n_output = 50
+n_input = 784
+n_output = 10
 
 x = tf.placeholder(tf.float32, [None, n_input])
 y = tf.placeholder(tf.float32, [None, n_output])
@@ -111,16 +78,14 @@ sess.run(tf.initialize_all_variables())
 batch_size = 100
 n_epochs = 5
 l_loss = list()
-
-images,labels = readData()
 for epoch_i in range(n_epochs):
-    for batch_i in range(0, 30):
-        batch_xs, batch_ys = readData()
+    for batch_i in range(0, mnist.train.num_examples, batch_size):
+        batch_xs, batch_ys = mnist.train.next_batch(batch_size)
         sess.run(optimizer, feed_dict={
             x: batch_xs, y: batch_ys, keep_prob: 0.5})
     loss = sess.run(accuracy, feed_dict={
-                        x: images,
-                        y: labels,
+                        x: mnist.validation.images,
+                        y: mnist.validation.labels,
                         keep_prob: 1.0 })
     print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
     l_loss.append(loss)
@@ -128,7 +93,7 @@ for epoch_i in range(n_epochs):
 
 print("Accuracy for test set: {}".format(sess.run(accuracy,
                 feed_dict={
-                    x: images,
-                    y: labels,
+                    x: mnist.test.images,
+                    y: mnist.test.labels,
                     keep_prob: 1.0
                 })))
