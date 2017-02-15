@@ -1,7 +1,46 @@
 import tensorflow as tf
 import numpy as np
 import tensorflow.examples.tutorials.mnist.input_data as input_data
-mnist = input_data.read_data_sets('MNIST_data/', one_hot=True)
+from os import listdir
+import os.path
+from os.path import isfile, join
+from PIL import Image
+from resizeimage import resizeimage
+from skimage import img_as_float
+import pickle
+import random
+
+size = 30,30
+def PIL2array(img):
+    ar = np.array(img.getdata(),
+                    np.float32)
+    return np.multiply(ar, 1/255).tolist()
+
+# reads data from files
+def readData():
+    dirs = listdir('FinalDataset/')
+    y = []
+    x =[]
+    for directory in dirs:
+        images = listdir('FinalDataset/'+directory)
+
+        for img in images:
+            arr = [0.] * 50
+            arr[int(directory) - 1] = 1.
+            y.append(arr)
+            fd_img = 'FinalDataset/'+directory + '/' + img
+            imgg = Image.open(fd_img).convert('L')
+            imgg = imgg.resize(size)
+            x.append(PIL2array(imgg))
+    
+    return x,y
+
+def shuffle(x,y):
+    zipped = list(zip(x,y))
+    random.shuffle(zipped)
+    n_x,n_y = zip(*zipped)
+    return n_x, n_y
+# print(readData())
 
 # Convolution definition
 def conv2d(x,W):
@@ -16,84 +55,159 @@ def weight_variable(shape):
     return tf.Variable(initial)
 
 def bias_variable(shape):
-    initial = tf.constant(0.1, shape=shape)
+    initial = tf.constant(0.1, shape=shape) # Sets lr
     return tf.Variable(initial)
+
+def variable_summaries(var):
+    """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+    with tf.name_scope('summaries'):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.histogram('histogram', var)
 
 
 # We start
-n_input = 784
-n_output = 10
+n_input = 30*30
+n_output = 50
 
-x = tf.placeholder(tf.float32, [None, n_input])
-y = tf.placeholder(tf.float32, [None, n_output])
-
-x_tensor = tf.reshape(x, [-1, 28, 28, 1])
+with tf.name_scope('input_layer'):
+    x = tf.placeholder(tf.float32, [None, n_input])
+    x_tensor = tf.reshape(x, [-1, 30, 30, 1])
 
 # Weight matrix is [height x width x input_channels x output_channels]
 # Bias is [output_channels]
 filter_size = 5
-n_filters_1 = 16
-n_filters_2 = 16
+n_filters_1 = 20
+n_filters_2 = 20
 
-# parameters
-W_conv1 = weight_variable([filter_size, filter_size, 1, n_filters_1])
-b_conv1 = bias_variable([n_filters_1])
-W_conv2 = weight_variable([filter_size, filter_size, n_filters_1, n_filters_2])
-b_conv2 = bias_variable([n_filters_2])
+# parameters and layers
+with tf.name_scope('First_Convolution'):
+    W_conv1 = weight_variable([filter_size, filter_size, 1, n_filters_1])
+    b_conv1 = bias_variable([n_filters_1])
+    with tf.name_scope('activation'):
+        h_conv1 = tf.nn.relu(conv2d(x_tensor, W_conv1) + b_conv1)
+    with tf.name_scope('max_pool'):
+        h_pool1 = max_pool_2x2(h_conv1)
 
-# layers
-h_conv1 = tf.nn.relu(conv2d(x_tensor, W_conv1) + b_conv1)
-h_pool1 = max_pool_2x2(h_conv1)
+with tf.name_scope('Second_Convolution'):
+    W_conv2 = weight_variable([filter_size, filter_size, n_filters_1, n_filters_2])
+    b_conv2 = bias_variable([n_filters_2])
+    with tf.name_scope('activation'):
+        h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
+    with tf.name_scope('max_pool'):
+        h_pool2 = max_pool_2x2(h_conv2)
 
-h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
-h_pool2 = max_pool_2x2(h_conv2)
+with tf.name_scope('flatten'):
+    # 7x7 is the size of the image after the convolutional and pooling layers (30x30 -> 15x15 -> 8x8)
+    h_conv2_flat = tf.reshape(h_pool2, [-1, 8*8 * n_filters_2])
 
-# 7x7 is the size of the image after the convolutional and pooling layers (28x28 -> 14x14 -> 7x7)
-h_conv2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * n_filters_2])
+# %% Create the one fully-connected layers:
+with tf.name_scope('2048_fully_connected'):
+    n_fc = 2048
+    W_fc1 = weight_variable([8*8 * n_filters_2, n_fc])
+    b_fc1 = bias_variable([n_fc])
+    with tf.name_scope('activation'):
+        h_fc1 = tf.nn.relu(tf.matmul(h_conv2_flat, W_fc1) + b_fc1)
 
-# %% Create the one fully-connected layer:
-n_fc = 1024
-W_fc1 = weight_variable([7 * 7 * n_filters_2, n_fc])
-b_fc1 = bias_variable([n_fc])
-h_fc1 = tf.nn.relu(tf.matmul(h_conv2_flat, W_fc1) + b_fc1)
+with tf.name_scope('1024_fully_connected'):
+    n_fc2 = 1024
+    W_fc2 = weight_variable([n_fc,n_fc2])
+    b_fc2 = bias_variable([n_fc2])
+    with tf.name_scope('activation'):
+        h_fc2 = tf.nn.relu(tf.matmul(h_fc1,W_fc2)+b_fc2)
+with tf.name_scope('dropout'):
+    keep_prob = tf.placeholder(tf.float32)
+    h_fc2_drop = tf.nn.dropout(h_fc2, keep_prob)
 
-keep_prob = tf.placeholder(tf.float32)
-h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
+with tf.name_scope('output'):
+    W_fc3 = weight_variable([n_fc2, n_output])
+    b_fc3 = bias_variable([n_output])
+    y_pred = tf.matmul(h_fc2_drop, W_fc3) + b_fc3
+    y = tf.placeholder(tf.float32, [None, n_output])
+    cross_entropy = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(y_pred, y))
+    variable_summaries(y)
+tf.summary.scalar('cross_entropy', cross_entropy)
 
-W_fc2 = weight_variable([n_fc, n_output])
-b_fc2 = bias_variable([n_output])
-y_pred = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
+with tf.name_scope('adam_optimizer'):
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(cross_entropy)
 
-cross_entropy = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(y_pred, y))
-optimizer = tf.train.AdamOptimizer().minimize(cross_entropy)
+with tf.name_scope('loss_function'):
+    # Creating loss function
+    with tf.name_scope('correct_prediction'):
+        correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y, 1))
+    with tf.name_scope('accuracy'):
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float')) 
+tf.summary.scalar('accuracy', accuracy)
 
-correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
-# variables:
-sess = tf.Session()
-sess.run(tf.initialize_all_variables())
+with tf.name_scope('init'):
+    # variables:
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+# init logger
+train_writer = tf.summary.FileWriter('graphs/train', sess.graph)
+test_writer = tf.summary.FileWriter('graphs/test')
+merged = tf.summary.merge_all()
 
 # We'll train in minibatches and report accuracy:
-batch_size = 100
-n_epochs = 5
+batch_size = 50
+n_epochs = 2000
 l_loss = list()
+images = []
+labels = []
+
+# Checking for preprocessed data
+if (os.path.exists('images.dat') and os.path.exists('labels.dat')):
+    with open('images.dat','rb') as fp:
+        images = pickle.load(fp)
+    with open('labels.dat','rb') as fp:
+        labels = pickle.load(fp)
+else:
+    images,labels = readData()
+    with open('images.dat', 'wb') as fp:
+        pickle.dump(images, fp)
+    with open('labels.dat', 'wb') as fp:
+        pickle.dump(labels, fp)
+
+# Creating test and train data sets
+train_length = int(len(images)*0.85)
+images, labels = shuffle(images,labels) # Shuffeling
+train_x = images[:train_length]
+train_y = labels[:train_length]
+test_x = images[train_length+1:]
+test_y=labels[train_length+1:]
+
+
+
+
+
 for epoch_i in range(n_epochs):
-    for batch_i in range(0, mnist.train.num_examples, batch_size):
-        batch_xs, batch_ys = mnist.train.next_batch(batch_size)
-        sess.run(optimizer, feed_dict={
-            x: batch_xs, y: batch_ys, keep_prob: 0.5})
-    loss = sess.run(accuracy, feed_dict={
-                        x: mnist.validation.images,
-                        y: mnist.validation.labels,
+    
+    
+    summary, loss = sess.run([merged,optimizer], feed_dict={
+        x: train_x[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)], y: train_y[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)], keep_prob: 0.5})
+
+    # Running test every 10
+    if ((epoch_i+1) % 10 == 0):
+        train_writer.add_summary(summary,epoch_i)
+        test_x, test_y = shuffle(test_x,test_y)
+        summary, loss = sess.run([merged,accuracy], feed_dict={
+                        x: test_x[:batch_size],
+                        y: test_y[:batch_size],
                         keep_prob: 1.0 })
-    print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
-    l_loss.append(loss)
+        test_writer.add_summary(summary, epoch_i)
+        print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
+        l_loss.append(loss)
+        train_x , train_y = shuffle(train_x,train_y)
 
-
-print("Accuracy for test set: {}".format(sess.run(accuracy,
-                feed_dict={
-                    x: mnist.test.images,
-                    y: mnist.test.labels,
-                    keep_prob: 1.0
-                })))
+summary, loss =sess.run([merged,accuracy],feed_dict={
+                    x: test_x,
+                    y: test_y,
+                    keep_prob: 1.0})
+#test_writer.add_summary(summary,0)
+print("Accuracy for test set: {}".format(loss))
+test_writer.close()
+train_writer.close()
