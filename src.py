@@ -9,8 +9,13 @@ from resizeimage import resizeimage
 from skimage import img_as_float
 import pickle
 import random
+import datetime
 
-size = 30,30
+lr = 0.001 # Set learning rate
+batch_size = 100 # Set batch size
+n_epochs = 2000 # Set number of epochs
+size = 30,30 # Set data size
+test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
     ar = np.array(img.getdata(),
                     np.float32)
@@ -101,7 +106,7 @@ with tf.name_scope('Second_Convolution'):
         h_pool2 = max_pool_2x2(h_conv2)
 
 with tf.name_scope('flatten'):
-    # 7x7 is the size of the image after the convolutional and pooling layers (30x30 -> 15x15 -> 8x8)
+    # 8x8 is the size of the image after the convolutional and pooling layers (30x30 -> 15x15 -> 8x8)
     h_conv2_flat = tf.reshape(h_pool2, [-1, 8*8 * n_filters_2])
 
 # %% Create the one fully-connected layers:
@@ -132,7 +137,7 @@ with tf.name_scope('output'):
 tf.summary.scalar('cross_entropy', cross_entropy)
 
 with tf.name_scope('adam_optimizer'):
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(cross_entropy)
+    optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(cross_entropy)
 
 with tf.name_scope('loss_function'):
     # Creating loss function
@@ -148,13 +153,12 @@ with tf.name_scope('init'):
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 # init logger
-train_writer = tf.summary.FileWriter('graphs/train', sess.graph)
-test_writer = tf.summary.FileWriter('graphs/test')
+date = datetime.datetime.now().timestamp()
+train_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/train'.format(test_to_data_ratio,lr,batch_size,n_epochs,date), sess.graph)
+test_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/test'.format(test_to_data_ratio,lr,batch_size,n_epochs,date))
 merged = tf.summary.merge_all()
 
 # We'll train in minibatches and report accuracy:
-batch_size = 50
-n_epochs = 2000
 l_loss = list()
 images = []
 labels = []
@@ -173,7 +177,7 @@ else:
         pickle.dump(labels, fp)
 
 # Creating test and train data sets
-train_length = int(len(images)*0.85)
+train_length = int(len(images)*test_to_data_ratio)
 images, labels = shuffle(images,labels) # Shuffeling
 train_x = images[:train_length]
 train_y = labels[:train_length]
@@ -185,18 +189,17 @@ test_y=labels[train_length+1:]
 
 
 for epoch_i in range(n_epochs):
-    
-    
+    batch_x = train_x[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
+    batch_y = train_y[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
     summary, loss = sess.run([merged,optimizer], feed_dict={
-        x: train_x[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)], y: train_y[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)], keep_prob: 0.5})
+        x: batch_x, y: batch_y, keep_prob: 0.5})
 
     # Running test every 10
     if ((epoch_i+1) % 10 == 0):
         train_writer.add_summary(summary,epoch_i)
-        test_x, test_y = shuffle(test_x,test_y)
         summary, loss = sess.run([merged,accuracy], feed_dict={
-                        x: test_x[:batch_size],
-                        y: test_y[:batch_size],
+                        x: test_x,
+                        y: test_y,
                         keep_prob: 1.0 })
         test_writer.add_summary(summary, epoch_i)
         print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
