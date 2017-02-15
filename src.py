@@ -13,7 +13,7 @@ import datetime
 
 lr = 0.001 # Set learning rate
 batch_size = 100 # Set batch size
-n_epochs = 2000 # Set number of epochs
+n_epochs = 100 # Set number of epochs
 size = 30,30 # Set data size
 test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
@@ -136,17 +136,23 @@ with tf.name_scope('output'):
     variable_summaries(y)
 tf.summary.scalar('cross_entropy', cross_entropy)
 
+
+
 with tf.name_scope('adam_optimizer'):
     optimizer = tf.train.AdamOptimizer(learning_rate=lr).minimize(cross_entropy)
 
 with tf.name_scope('loss_function'):
     # Creating loss function
-    with tf.name_scope('correct_prediction'):
-        correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y, 1))
+    with tf.name_scope('prediction'):
+        prediction = tf.argmax(y_pred, 1)
+        need_result = tf.argmax(y, 1)
+        correct_prediction = tf.equal(prediction, need_result)
     with tf.name_scope('accuracy'):
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float')) 
 tf.summary.scalar('accuracy', accuracy)
 
+with tf.name_scope('confusion_matrix'):
+    confusion = tf.contrib.metrics.confusion_matrix(prediction,need_result)
 
 with tf.name_scope('init'):
     # variables:
@@ -197,7 +203,7 @@ for epoch_i in range(n_epochs):
     # Running test every 10
     if ((epoch_i+1) % 10 == 0):
         train_writer.add_summary(summary,epoch_i)
-        summary, loss = sess.run([merged,accuracy], feed_dict={
+        summary, loss,confuse = sess.run([merged,accuracy, confusion], feed_dict={
                         x: test_x,
                         y: test_y,
                         keep_prob: 1.0 })
@@ -206,11 +212,11 @@ for epoch_i in range(n_epochs):
         l_loss.append(loss)
         train_x , train_y = shuffle(train_x,train_y)
 
-summary, loss =sess.run([merged,accuracy],feed_dict={
+summary, loss, confuse =sess.run([merged,accuracy,confusion],feed_dict={
                     x: test_x,
                     y: test_y,
                     keep_prob: 1.0})
-#test_writer.add_summary(summary,0)
+
 print("Accuracy for test set: {}".format(loss))
 test_writer.close()
 train_writer.close()
