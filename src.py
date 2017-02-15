@@ -13,7 +13,7 @@ import datetime
 
 lr = 0.001 # Set learning rate
 batch_size = 100 # Set batch size
-n_epochs = 100 # Set number of epochs
+n_epochs = 1500 # Set number of epochs
 size = 30,30 # Set data size
 test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
@@ -216,7 +216,7 @@ summary, loss, confuse =sess.run([merged,accuracy,confusion],feed_dict={
                     x: test_x,
                     y: test_y,
                     keep_prob: 1.0})
-
+np.savetxt('confusions/{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch_size,n_epochs,date),confuse,delimiter=',')
 print("Accuracy for test set: {}".format(loss))
 test_writer.close()
 train_writer.close()
