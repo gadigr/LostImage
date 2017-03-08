@@ -7,15 +7,20 @@ from os.path import isfile, join
 from PIL import Image
 from resizeimage import resizeimage
 from skimage import img_as_float
+from tensorflow.python.saved_model import builder as saved_model_builder
+from tensorflow.python.saved_model import signature_constants
+from tensorflow.python.saved_model import signature_def_utils
+from tensorflow.python.saved_model import tag_constants
+from tensorflow.python.saved_model import utils
 import pickle
 import random
 import datetime
-import math
+import 
 
-lr = 0.0007 # Set learning rate
-batch_size = 100 # Set batch size
+lr = 0.001 # Set learning rate
+batch_size = 50 # Set batch size
 n_epochs = 1700 # Set number of epochs
-sizing = 30
+sizing = 20
 size = sizing,sizing # Set data size
 test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
@@ -224,3 +229,25 @@ np.savetxt('confusions/{}_{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch
 print("Accuracy for test set: {}".format(loss))
 test_writer.close()
 train_writer.close()
+
+
+tensor_info_x = utils.build_tensor_info(x_tensor)
+tensor_info_y = utils.build_tensor_info(y_pred)
+
+prediction_signature = signature_def_utils.build_signature_def(
+      inputs={'images': tensor_info_x},
+      outputs={'scores': tensor_info_y},
+      method_name=signature_constants.PREDICT_METHOD_NAME)
+
+
+builder = saved_model_builder.SavedModelBuilder("{}_{}_{}_{}_{}_{}.prod".format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date))
+builder.add_meta_graph_and_variables(
+      sess, [tag_constants.SERVING],
+      signature_def_map={
+           'predict':
+               prediction_signature,
+           signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+               classification_signature,
+      },
+      legacy_init_op=legacy_init_op)
+builder.save()
