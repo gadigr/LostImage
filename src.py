@@ -10,11 +10,13 @@ from skimage import img_as_float
 import pickle
 import random
 import datetime
+import math
 
-lr = 0.001 # Set learning rate
+lr = 0.0007 # Set learning rate
 batch_size = 100 # Set batch size
-n_epochs = 1500 # Set number of epochs
-size = 30,30 # Set data size
+n_epochs = 1700 # Set number of epochs
+sizing = 30
+size = sizing,sizing # Set data size
 test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
     ar = np.array(img.getdata(),
@@ -75,12 +77,12 @@ def variable_summaries(var):
 
 
 # We start
-n_input = 30*30
+n_input = sizing*sizing
 n_output = 50
-
+sizeAfterConv = int(math.ceil(sizing/4))
 with tf.name_scope('input_layer'):
     x = tf.placeholder(tf.float32, [None, n_input])
-    x_tensor = tf.reshape(x, [-1, 30, 30, 1])
+    x_tensor = tf.reshape(x, [-1, sizing, sizing, 1])
 
 # Weight matrix is [height x width x input_channels x output_channels]
 # Bias is [output_channels]
@@ -107,12 +109,12 @@ with tf.name_scope('Second_Convolution'):
 
 with tf.name_scope('flatten'):
     # 8x8 is the size of the image after the convolutional and pooling layers (30x30 -> 15x15 -> 8x8)
-    h_conv2_flat = tf.reshape(h_pool2, [-1, 8*8 * n_filters_2])
+    h_conv2_flat = tf.reshape(h_pool2, [-1, sizeAfterConv*sizeAfterConv * n_filters_2])
 
 # %% Create the one fully-connected layers:
 with tf.name_scope('2048_fully_connected'):
     n_fc = 2048
-    W_fc1 = weight_variable([8*8 * n_filters_2, n_fc])
+    W_fc1 = weight_variable([sizeAfterConv*sizeAfterConv * n_filters_2, n_fc])
     b_fc1 = bias_variable([n_fc])
     with tf.name_scope('activation'):
         h_fc1 = tf.nn.relu(tf.matmul(h_conv2_flat, W_fc1) + b_fc1)
@@ -160,8 +162,8 @@ with tf.name_scope('init'):
     sess.run(tf.global_variables_initializer())
 # init logger
 date = datetime.datetime.now().timestamp()
-train_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/train'.format(test_to_data_ratio,lr,batch_size,n_epochs,date), sess.graph)
-test_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/test'.format(test_to_data_ratio,lr,batch_size,n_epochs,date))
+train_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/train'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date), sess.graph)
+test_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/test'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date))
 merged = tf.summary.merge_all()
 
 # We'll train in minibatches and report accuracy:
@@ -170,16 +172,18 @@ images = []
 labels = []
 
 # Checking for preprocessed data
-if (os.path.exists('images.dat') and os.path.exists('labels.dat')):
-    with open('images.dat','rb') as fp:
+imageFileName = 'images{}.dat'.format(sizing)
+labelsFileName = 'labels{}.dat'.format(sizing)
+if (os.path.exists(imageFileName) and os.path.exists(labelsFileName)):
+    with open(imageFileName,'rb') as fp:
         images = pickle.load(fp)
-    with open('labels.dat','rb') as fp:
+    with open(labelsFileName,'rb') as fp:
         labels = pickle.load(fp)
 else:
     images,labels = readData()
-    with open('images.dat', 'wb') as fp:
+    with open(imageFileName.format(sizing), 'wb') as fp:
         pickle.dump(images, fp)
-    with open('labels.dat', 'wb') as fp:
+    with open(labelsFileName.format(sizing), 'wb') as fp:
         pickle.dump(labels, fp)
 
 # Creating test and train data sets
@@ -216,7 +220,7 @@ summary, loss, confuse =sess.run([merged,accuracy,confusion],feed_dict={
                     x: test_x,
                     y: test_y,
                     keep_prob: 1.0})
-np.savetxt('confusions/{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch_size,n_epochs,date),confuse,delimiter=',')
+np.savetxt('confusions/{}_{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date),confuse,delimiter=',')
 print("Accuracy for test set: {}".format(loss))
 test_writer.close()
 train_writer.close()
