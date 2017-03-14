@@ -7,20 +7,17 @@ from os.path import isfile, join
 from PIL import Image
 from resizeimage import resizeimage
 from skimage import img_as_float
-from tensorflow.python.saved_model import builder as saved_model_builder
-from tensorflow.python.saved_model import signature_constants
-from tensorflow.python.saved_model import signature_def_utils
-from tensorflow.python.saved_model import tag_constants
-from tensorflow.python.saved_model import utils
 import pickle
 import random
 import datetime
-import 
+import math
+import sys
 
-lr = 0.001 # Set learning rate
-batch_size = 50 # Set batch size
-n_epochs = 1700 # Set number of epochs
-sizing = 20
+
+lr = 0.0005 # Set learning rate
+batch_size = 200 # Set batch size
+n_epochs = 1500 # Set number of epochs
+sizing = 30
 size = sizing,sizing # Set data size
 test_to_data_ratio = 0.85 # Set train to test ration
 def PIL2array(img):
@@ -160,94 +157,92 @@ tf.summary.scalar('accuracy', accuracy)
 
 with tf.name_scope('confusion_matrix'):
     confusion = tf.contrib.metrics.confusion_matrix(prediction,need_result)
+if sys.argv[1]=='t': 
+    with tf.name_scope('init'):
+        # variables:
+        sess = tf.Session()
+        sess.run(tf.global_variables_initializer())
+    # init logger
+    date = datetime.datetime.now().timestamp()
+    train_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/train'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date), sess.graph)
+    test_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/test'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date))
+    merged = tf.summary.merge_all()
 
-with tf.name_scope('init'):
-    # variables:
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
-# init logger
-date = datetime.datetime.now().timestamp()
-train_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/train'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date), sess.graph)
-test_writer = tf.summary.FileWriter('graphs/{}/{}/{}/{}/{}/{}/test'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date))
-merged = tf.summary.merge_all()
+    # We'll train in minibatches and report accuracy:
+    l_loss = list()
+    images = []
+    labels = []
 
-# We'll train in minibatches and report accuracy:
-l_loss = list()
-images = []
-labels = []
+    # Checking for preprocessed data
+    imageFileName = 'images{}.dat'.format(sizing)
+    labelsFileName = 'labels{}.dat'.format(sizing)
+    if (os.path.exists(imageFileName) and os.path.exists(labelsFileName)):
+        with open(imageFileName,'rb') as fp:
+            images = pickle.load(fp)
+        with open(labelsFileName,'rb') as fp:
+            labels = pickle.load(fp)
+    else:
+        images,labels = readData()
+        with open(imageFileName.format(sizing), 'wb') as fp:
+            pickle.dump(images, fp)
+        with open(labelsFileName.format(sizing), 'wb') as fp:
+            pickle.dump(labels, fp)
 
-# Checking for preprocessed data
-imageFileName = 'images{}.dat'.format(sizing)
-labelsFileName = 'labels{}.dat'.format(sizing)
-if (os.path.exists(imageFileName) and os.path.exists(labelsFileName)):
-    with open(imageFileName,'rb') as fp:
-        images = pickle.load(fp)
-    with open(labelsFileName,'rb') as fp:
-        labels = pickle.load(fp)
-else:
-    images,labels = readData()
-    with open(imageFileName.format(sizing), 'wb') as fp:
-        pickle.dump(images, fp)
-    with open(labelsFileName.format(sizing), 'wb') as fp:
-        pickle.dump(labels, fp)
+    # Creating test and train data sets
+    train_length = int(len(images)*test_to_data_ratio)
+    images, labels = shuffle(images,labels) # Shuffeling
+    train_x = images[:train_length]
+    train_y = labels[:train_length]
+    test_x = images[train_length+1:]
+    test_y=labels[train_length+1:]
+    for epoch_i in range(n_epochs):
+        batch_x = train_x[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
+        batch_y = train_y[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
+        # print(len(batch_x[0]))
+        summary, loss = sess.run([merged,optimizer], feed_dict={
+            x: batch_x, y: batch_y, keep_prob: 0.5})
 
-# Creating test and train data sets
-train_length = int(len(images)*test_to_data_ratio)
-images, labels = shuffle(images,labels) # Shuffeling
-train_x = images[:train_length]
-train_y = labels[:train_length]
-test_x = images[train_length+1:]
-test_y=labels[train_length+1:]
+        # Running test every 10
+        if ((epoch_i+1) % 10 == 0):
+            train_writer.add_summary(summary,epoch_i)
+            summary, loss,confuse = sess.run([merged,accuracy, confusion], feed_dict={
+                            x: test_x,
+                            y: test_y,
+                            keep_prob: 1.0 })
+            test_writer.add_summary(summary, epoch_i)
+            print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
+            l_loss.append(loss)
+            train_x , train_y = shuffle(train_x,train_y)
 
-
-
-
-
-for epoch_i in range(n_epochs):
-    batch_x = train_x[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
-    batch_y = train_y[batch_size*((epoch_i+1) % 10):batch_size*(((epoch_i+1) % 10)+1)]
-    summary, loss = sess.run([merged,optimizer], feed_dict={
-        x: batch_x, y: batch_y, keep_prob: 0.5})
-
-    # Running test every 10
-    if ((epoch_i+1) % 10 == 0):
-        train_writer.add_summary(summary,epoch_i)
-        summary, loss,confuse = sess.run([merged,accuracy, confusion], feed_dict={
+    summary, loss, confuse =sess.run([merged,accuracy,confusion],feed_dict={
                         x: test_x,
                         y: test_y,
-                        keep_prob: 1.0 })
-        test_writer.add_summary(summary, epoch_i)
-        print('Validation accuracy for epoch {} is: {}'.format(epoch_i + 1, loss))
-        l_loss.append(loss)
-        train_x , train_y = shuffle(train_x,train_y)
+                        keep_prob: 1.0})
+    np.savetxt('confusions/{}_{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date),confuse,delimiter=',')
+    print("Accuracy for test set: {}".format(loss))
+    test_writer.close()
+    train_writer.close()
 
-summary, loss, confuse =sess.run([merged,accuracy,confusion],feed_dict={
-                    x: test_x,
-                    y: test_y,
-                    keep_prob: 1.0})
-np.savetxt('confusions/{}_{}_{}_{}_{}_{}.csv'.format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date),confuse,delimiter=',')
-print("Accuracy for test set: {}".format(loss))
-test_writer.close()
-train_writer.close()
+    # Save the variables to disk.
+    saver = tf.train.Saver()
 
+    save_path = saver.save(sess, "Model/model.ckpt")
+    print("Model saved in file: %s" % save_path)
+else:
+    with tf.Session() as sess:
+        # Add ops to save and restore all the variables.
+        saver = tf.train.Saver()
+        # Restore variables from disk.
+        saver.restore(sess, "Model/model.ckpt")
+        print("Model restored.")
 
-tensor_info_x = utils.build_tensor_info(x_tensor)
-tensor_info_y = utils.build_tensor_info(y_pred)
+        images = listdir(sys.argv[1])
+        x_test = []
+        for img in images:
+            fd_img = sys.argv[1] + '/' + img
+            imgg = Image.open(fd_img).convert('L')
+            imgg = imgg.resize(size)
+            x_test.append(PIL2array(imgg))
 
-prediction_signature = signature_def_utils.build_signature_def(
-      inputs={'images': tensor_info_x},
-      outputs={'scores': tensor_info_y},
-      method_name=signature_constants.PREDICT_METHOD_NAME)
-
-
-builder = saved_model_builder.SavedModelBuilder("{}_{}_{}_{}_{}_{}.prod".format(test_to_data_ratio,lr,batch_size,n_epochs,sizing,date))
-builder.add_meta_graph_and_variables(
-      sess, [tag_constants.SERVING],
-      signature_def_map={
-           'predict':
-               prediction_signature,
-           signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
-               classification_signature,
-      },
-      legacy_init_op=legacy_init_op)
-builder.save()
+        p = sess.run(prediction,feed_dict={x:x_test,keep_prob: 1.0})
+        print(p)
