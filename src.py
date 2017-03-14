@@ -245,4 +245,5 @@ else:
             x_test.append(PIL2array(imgg))
 
         p = sess.run(prediction,feed_dict={x:x_test,keep_prob: 1.0})
-        print(p)
+        for x in zip(images, p):
+            print(str(x[0])+ " : "+str(x[1]+1))
